@@ -20,6 +20,7 @@ import {
 import AntiScrapeShield from '@/components/AntiScrapeShield';
 import LoginGate from '@/components/LoginGate';
 import ThemeSelector from '@/components/ThemeSelector';
+import LanguageSelector from '@/components/LanguageSelector';
 import StepSendLink from '@/components/StepSendLink';
 import StepVerifyLink from '@/components/StepVerifyLink';
 import OwnerContactModal from '@/components/OwnerContactModal';
@@ -31,6 +32,7 @@ import { ThemeConfig, ActivationHistory } from '@/types/portal';
 import { ValzzProviderId } from '@/lib/valzzProviders';
 import { useStorageItem, notifyStoreChange } from '@/lib/storage';
 import { getPersistentDeviceId } from '@/lib/device';
+import { LanguageCode, getTranslation } from '@/lib/i18n';
 import {
   getPersistentCooldown,
   setPersistentCooldown,
@@ -54,6 +56,7 @@ export default function Home() {
   // Reactive external store hooks
   const authRaw = useStorageItem('valzz_auth', '');
   const themeRaw = useStorageItem('valzz_theme', 'emerald');
+  const langRaw = useStorageItem('valzz_lang', 'id');
   const cooldownDurationRaw = useStorageItem('valzz_cooldown_duration', '60');
   const cooldownEndRaw = useStorageItem('valzz_cooldown', '0');
   const announcementRaw = useStorageItem(
@@ -64,6 +67,9 @@ export default function Home() {
   const historyRaw = useStorageItem('valzz_history', '[]');
 
   // Derived reactive states
+  const currentLang: LanguageCode = (langRaw as LanguageCode) || 'id';
+  const t = (key: string, fallback?: string) => getTranslation(currentLang, key, fallback);
+
   const authData = useMemo(() => {
     try {
       return authRaw ? JSON.parse(authRaw) : null;
@@ -149,13 +155,6 @@ export default function Home() {
     try {
       localStorage.setItem('valzz_auth', JSON.stringify({ userType: type, username: user, token }));
       notifyStoreChange();
-      // Ensure cooldown is preserved on relog
-      const devId = getPersistentDeviceId();
-      const dbEnd = await getPersistentCooldown(devId);
-      if (dbEnd > Date.now()) {
-        setCooldownEndState(dbEnd);
-        localStorage.setItem('valzz_cooldown', dbEnd.toString());
-      }
     } catch {}
   };
 
@@ -166,77 +165,79 @@ export default function Home() {
     } catch {}
   };
 
-  const handleThemeChange = (t: ThemeConfig) => {
+  const handleThemeChange = (themeId: string) => {
     try {
-      localStorage.setItem('valzz_theme', t.id);
+      localStorage.setItem('valzz_theme', themeId);
       notifyStoreChange();
     } catch {}
   };
 
-  const handleSetCooldown = (timestamp: number) => {
-    setCooldownEndState(timestamp);
+  const handleLanguageChange = (langCode: LanguageCode) => {
     try {
-      localStorage.setItem('valzz_cooldown', timestamp.toString());
+      localStorage.setItem('valzz_lang', langCode);
       notifyStoreChange();
-    } catch {}
-
-    const devId = getPersistentDeviceId();
-    const remainingSec = Math.max(0, Math.ceil((timestamp - Date.now()) / 1000));
-    if (remainingSec > 0) {
-      setPersistentCooldown(devId, remainingSec).catch(() => {});
-    }
-  };
-
-  const handleUpdateCooldownDuration = (sec: number) => {
-    try {
-      localStorage.setItem('valzz_cooldown_duration', sec.toString());
-      notifyStoreChange();
-      updateSystemConfigInDb({ cooldownDuration: sec }).catch(() => {});
     } catch {}
   };
 
-  const handleResetUserCooldown = () => {
+  const handleSetCooldown = async (targetTimestamp: number) => {
+    setCooldownEndState(targetTimestamp);
     try {
-      setCooldownEndState(0);
+      localStorage.setItem('valzz_cooldown', targetTimestamp.toString());
+      notifyStoreChange();
+      const devId = getPersistentDeviceId();
+      await setPersistentCooldown(devId, targetTimestamp);
+    } catch {}
+  };
+
+  const handleResetUserCooldown = async () => {
+    setCooldownEndState(0);
+    try {
       localStorage.removeItem('valzz_cooldown');
       notifyStoreChange();
       const devId = getPersistentDeviceId();
-      resetPersistentCooldown(devId).catch(() => {});
-      alert('Cooldown Anda telah direset di Database Firestore & Penyimpanan Lokal!');
+      await resetPersistentCooldown(devId);
     } catch {}
   };
 
-  const handleUpdateAnnouncement = (text: string) => {
+  const handleUpdateCooldownDuration = async (seconds: number) => {
+    try {
+      localStorage.setItem('valzz_cooldown_duration', seconds.toString());
+      notifyStoreChange();
+      await updateSystemConfigInDb({ cooldownDuration: seconds });
+    } catch {}
+  };
+
+  const handleUpdateAnnouncement = async (text: string) => {
     try {
       localStorage.setItem('valzz_announcement', text);
       notifyStoreChange();
-      updateSystemConfigInDb({ announcementText: text }).catch(() => {});
+      await updateSystemConfigInDb({ announcementText: text });
     } catch {}
   };
 
-  const handleToggleAnnouncement = (active: boolean) => {
+  const handleToggleAnnouncement = async (active: boolean) => {
     try {
       localStorage.setItem('valzz_announcement_active', active ? 'true' : 'false');
       notifyStoreChange();
-      updateSystemConfigInDb({ isAnnouncementActive: active }).catch(() => {});
+      await updateSystemConfigInDb({ isAnnouncementActive: active });
     } catch {}
   };
 
-  const handleAddHistory = (item: ActivationHistory) => {
+  const handleAddHistory = async (item: ActivationHistory) => {
     try {
-      const currentHist: ActivationHistory[] = historyRaw ? JSON.parse(historyRaw) : [];
-      const updated = [item, ...currentHist].slice(0, 30);
+      const current = historyRaw ? JSON.parse(historyRaw) : [];
+      const updated = [item, ...current].slice(0, 30);
       localStorage.setItem('valzz_history', JSON.stringify(updated));
       notifyStoreChange();
-      addActivationToDb(item).catch(() => {});
+      await addActivationToDb(item);
     } catch {}
   };
 
-  const handleClearHistory = () => {
+  const handleClearHistory = async () => {
     try {
-      localStorage.removeItem('valzz_history');
+      localStorage.setItem('valzz_history', '[]');
       notifyStoreChange();
-      clearAllActivationsFromDb().catch(() => {});
+      await clearAllActivationsFromDb();
     } catch {}
   };
 
@@ -263,6 +264,8 @@ export default function Home() {
       {!isAuthenticated ? (
         <LoginGate
           theme={currentTheme}
+          currentLang={currentLang}
+          onSelectLang={handleLanguageChange}
           onSuccessLogin={handleLoginSuccess}
           onOpenOwnerPV={() => setIsOwnerModalOpen(true)}
           onOpenOwnerPanel={() => setIsOwnerPanelOpen(true)}
@@ -298,51 +301,59 @@ export default function Home() {
               <div>
                 <div className="flex items-center gap-2">
                   <h1 className="text-base sm:text-lg font-black text-slate-100">
-                    Valzz Alight Motion Pro Free
+                    {t('appTitle', 'Valzz Alight Motion Pro Free')}
                   </h1>
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
-                    by valzzdev
+                    {t('byValzz', 'by valzzdev')}
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 flex items-center gap-1.5 mt-0.5">
                   <Radio className="w-3 h-3 text-emerald-400 animate-pulse" />
-                  <span>Valzz Engine Pro • Online (v2.5)</span>
+                  <span>{t('engineOnline', 'Valzz Engine Pro • Online (v2.5)')}</span>
                   <span className="text-slate-600">•</span>
                   <span className="text-[10px] text-emerald-400 flex items-center gap-1">
-                    <Database className="w-3 h-3" /> Firestore Active
+                    <Database className="w-3 h-3" /> {t('firestoreActive', 'Firestore Active')}
                   </span>
                 </p>
               </div>
             </div>
 
-            {/* Right Tools: Theme & PV Owner & Status & Owner Panel */}
+            {/* Right Tools: Language + Theme & PV Owner & Status & Owner Panel */}
             <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+              {/* Language Switcher Button */}
+              <LanguageSelector
+                currentLang={currentLang}
+                onSelectLang={handleLanguageChange}
+                theme={currentTheme}
+              />
+
+              {/* Theme Switcher Button */}
               <ThemeSelector currentTheme={currentTheme} onSelectTheme={handleThemeChange} />
 
               <button
                 onClick={() => setIsOwnerPanelOpen(true)}
                 id="btn-header-owner-panel"
-                className="px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-semibold flex items-center gap-1.5 transition"
+                className="px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
                 title="Buka Owner Control Panel"
               >
                 <Sliders className="w-3.5 h-3.5 text-rose-400" />
-                <span>Owner Panel</span>
+                <span>{t('ownerPanel', 'Owner Panel')}</span>
               </button>
 
               <button
                 onClick={() => setIsOwnerModalOpen(true)}
                 id="btn-header-pv-owner"
-                className="px-3 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold flex items-center gap-1.5 transition"
+                className="px-3 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
               >
                 <Crown className="w-3.5 h-3.5 text-amber-400" />
-                <span className="hidden sm:inline">PV Owner VIP</span>
+                <span className="hidden sm:inline">{t('pvOwnerVip', 'PV Owner VIP')}</span>
               </button>
 
               <button
                 onClick={handleLogout}
                 id="btn-logout"
-                title="Keluar / Ganti Akun"
-                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-rose-400 border border-slate-700 transition"
+                title={t('logout', 'Keluar / Ganti Akun')}
+                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-rose-400 border border-slate-700 transition cursor-pointer"
               >
                 <LogOut className="w-4 h-4" />
               </button>
@@ -352,14 +363,14 @@ export default function Home() {
           {/* Account Status Badge */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-900/60 border border-slate-800/80 px-5 py-3 rounded-2xl">
             <div className="flex items-center gap-2.5 text-xs text-slate-300">
-              <span className="text-slate-400">Mode Anda:</span>
+              <span className="text-slate-400">{t('yourMode', 'Mode Anda')}:</span>
               {userType === 'vip' ? (
                 <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold flex items-center gap-1">
-                  <Crown className="w-3 h-3 text-amber-400" /> VIP Private Member ({username})
+                  <Crown className="w-3 h-3 text-amber-400" /> {t('vipMember', 'VIP Private Member')} ({username})
                 </span>
               ) : (
                 <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold flex items-center gap-1">
-                  <Sparkles className="w-3 h-3 text-cyan-400" /> Free Member (Iklan & Cooldown {cooldownDuration}s)
+                  <Sparkles className="w-3 h-3 text-cyan-400" /> {t('freeMember', 'Free Member')} ({cooldownDuration}s)
                 </span>
               )}
             </div>
@@ -367,7 +378,7 @@ export default function Home() {
             {userType === 'free_user' && (
               <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
                 <Flame className="w-3.5 h-3.5 text-amber-400" />
-                <span>Mau bebas iklan & tanpa cooldown? Hubungi WhatsApp <strong>089671409020</strong></span>
+                <span>{t('upgradePromo', 'Mau bebas iklan & tanpa cooldown? Hubungi WhatsApp')} <strong>089671409020</strong></span>
               </div>
             )}
           </div>
@@ -377,7 +388,7 @@ export default function Home() {
             <button
               onClick={() => setActiveTab('send')}
               id="tab-step-1"
-              className={`p-4 rounded-2xl border text-left transition relative overflow-hidden ${
+              className={`p-4 rounded-2xl border text-left transition relative overflow-hidden cursor-pointer ${
                 activeTab === 'send'
                   ? 'bg-slate-900 border-emerald-500/50 shadow-lg shadow-emerald-500/10 text-slate-100'
                   : 'bg-slate-900/40 border-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-900/70'
@@ -385,18 +396,22 @@ export default function Home() {
             >
               <div className="flex items-center justify-between">
                 <span className="text-[10px] uppercase font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                  Langkah 01
+                  Step 01
                 </span>
                 <Send className={`w-4 h-4 ${activeTab === 'send' ? 'text-emerald-400' : 'text-slate-500'}`} />
               </div>
-              <h3 className="text-sm sm:text-base font-bold text-slate-100 mt-2">1. Kirim Magic Link</h3>
-              <p className="text-[11px] text-slate-400 mt-0.5 line-clamp-1">Kirim tautan aktivasi via Valzz Provider</p>
+              <h3 className="text-sm sm:text-base font-bold text-slate-100 mt-2">
+                {t('tabStep1Title', '1. Kirim Magic Link')}
+              </h3>
+              <p className="text-[11px] text-slate-400 mt-0.5 line-clamp-1">
+                {t('tabStep1Desc', 'Kirim tautan aktivasi via Valzz Provider')}
+              </p>
             </button>
 
             <button
               onClick={() => setActiveTab('verify')}
               id="tab-step-2"
-              className={`p-4 rounded-2xl border text-left transition relative overflow-hidden ${
+              className={`p-4 rounded-2xl border text-left transition relative overflow-hidden cursor-pointer ${
                 activeTab === 'verify'
                   ? 'bg-slate-900 border-cyan-500/50 shadow-lg shadow-cyan-500/10 text-slate-100'
                   : 'bg-slate-900/40 border-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-900/70'
@@ -404,12 +419,16 @@ export default function Home() {
             >
               <div className="flex items-center justify-between">
                 <span className="text-[10px] uppercase font-mono font-bold px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
-                  Langkah 02
+                  Step 02
                 </span>
                 <Link2 className={`w-4 h-4 ${activeTab === 'verify' ? 'text-cyan-400' : 'text-slate-500'}`} />
               </div>
-              <h3 className="text-sm sm:text-base font-bold text-slate-100 mt-2">2. Verifikasi Premium</h3>
-              <p className="text-[11px] text-slate-400 mt-0.5 line-clamp-1">Tempel tautan email & aktifkan Pro</p>
+              <h3 className="text-sm sm:text-base font-bold text-slate-100 mt-2">
+                {t('tabStep2Title', '2. Verifikasi Premium')}
+              </h3>
+              <p className="text-[11px] text-slate-400 mt-0.5 line-clamp-1">
+                {t('tabStep2Desc', 'Tempel tautan email & aktifkan Pro')}
+              </p>
             </button>
           </div>
 
@@ -445,7 +464,11 @@ export default function Home() {
           <section className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 space-y-4">
             <div className="flex items-center gap-2 text-slate-200 font-bold text-sm">
               <HelpCircle className="w-4 h-4 text-emerald-400" />
-              <span>Panduan Lengkap Aktivasi Alight Motion Pro Free (Valzz Provider)</span>
+              <span>
+                {currentLang === 'id'
+                  ? 'Panduan Lengkap Aktivasi Alight Motion Pro Free (Valzz Provider)'
+                  : 'Complete Guide: Alight Motion Pro Free Activation (Valzz Engine)'}
+              </span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs text-slate-300">
@@ -453,9 +476,13 @@ export default function Home() {
                 <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 font-bold font-mono flex items-center justify-center text-xs">
                   1
                 </div>
-                <h4 className="font-semibold text-slate-100">Kirim Link ke Email</h4>
+                <h4 className="font-semibold text-slate-100">
+                  {currentLang === 'id' ? 'Kirim Link ke Email' : 'Send Link to Email'}
+                </h4>
                 <p className="text-slate-400 text-[11px] leading-relaxed">
-                  Masukkan email yang terhubung dengan akun Alight Motion Anda. Pilih server Valzz Provider, klik kirim dan selesaikan 2 tahap iklan sponsor.
+                  {currentLang === 'id'
+                    ? 'Masukkan email yang terhubung dengan akun Alight Motion Anda. Pilih server Valzz Provider, klik kirim dan selesaikan 2 tahap iklan sponsor.'
+                    : 'Enter the email connected to your Alight Motion account. Choose Valzz Provider, click send and complete the sponsored gateway.'}
                 </p>
               </div>
 
@@ -463,9 +490,13 @@ export default function Home() {
                 <div className="w-6 h-6 rounded-full bg-cyan-500/20 text-cyan-400 font-bold font-mono flex items-center justify-center text-xs">
                   2
                 </div>
-                <h4 className="font-semibold text-slate-100">Buka Inbox Email</h4>
+                <h4 className="font-semibold text-slate-100">
+                  {currentLang === 'id' ? 'Buka Inbox Email' : 'Open Email Inbox'}
+                </h4>
                 <p className="text-slate-400 text-[11px] leading-relaxed">
-                  Buka Gmail atau Email Anda. Cari pesan verifikasi dari Alight Motion. Tekan lama tombol &quot;Sign In&quot; lalu salin alamat URL-nya (Magic Link).
+                  {currentLang === 'id'
+                    ? 'Buka Gmail atau Email Anda. Cari pesan verifikasi dari Alight Motion. Tekan lama tombol "Sign In" lalu salin alamat URL-nya (Magic Link).'
+                    : 'Open your Gmail/Email. Find the Alight Motion verification email. Long press "Sign In" button and copy its URL link.'}
                 </p>
               </div>
 
@@ -473,9 +504,13 @@ export default function Home() {
                 <div className="w-6 h-6 rounded-full bg-purple-500/20 text-purple-400 font-bold font-mono flex items-center justify-center text-xs">
                   3
                 </div>
-                <h4 className="font-semibold text-slate-100">Tempel & Aktifkan Pro</h4>
+                <h4 className="font-semibold text-slate-100">
+                  {currentLang === 'id' ? 'Tempel & Aktifkan Pro' : 'Paste & Activate Pro'}
+                </h4>
                 <p className="text-slate-400 text-[11px] leading-relaxed">
-                  Kembali ke web ini di Langkah 2, tempel tautan Magic Link, lalu klik aktifkan. Status Pro akan langsung aktif tanpa watermark.
+                  {currentLang === 'id'
+                    ? 'Kembali ke web ini di Langkah 2, tempel tautan Magic Link, lalu klik aktifkan. Status Pro akan langsung aktif tanpa watermark.'
+                    : 'Return to Step 2, paste the copied Magic Link, and click activate. Lifetime Pro will be instantly enabled with zero watermark.'}
                 </p>
               </div>
             </div>
@@ -484,7 +519,7 @@ export default function Home() {
           {/* Footer Branding & WhatsApp Contact */}
           <footer className="pt-6 pb-8 border-t border-slate-800/80 text-center space-y-3">
             <div className="flex flex-wrap items-center justify-center gap-3 text-xs text-slate-400">
-              <span>Valzz Alight Motion Pro Free</span>
+              <span>{t('appTitle', 'Valzz Alight Motion Pro Free')}</span>
               <span>•</span>
               <span>Author & Developer: <strong>Lenz👾 / valzzdev</strong></span>
               <span>•</span>
@@ -500,9 +535,9 @@ export default function Home() {
               <button
                 onClick={() => setIsOwnerPanelOpen(true)}
                 id="btn-footer-owner-panel"
-                className="text-rose-400 hover:underline font-semibold flex items-center gap-1"
+                className="text-rose-400 hover:underline font-semibold flex items-center gap-1 cursor-pointer"
               >
-                <Sliders className="w-3 h-3" /> Owner Panel
+                <Sliders className="w-3 h-3" /> {t('ownerPanel', 'Owner Panel')}
               </button>
             </div>
             <p className="text-[11px] text-slate-500">

@@ -165,9 +165,9 @@ export default function Home() {
     } catch {}
   };
 
-  const handleThemeChange = (themeId: string) => {
+  const handleThemeChange = (theme: ThemeConfig) => {
     try {
-      localStorage.setItem('valzz_theme', themeId);
+      localStorage.setItem('valzz_theme', theme.id);
       notifyStoreChange();
     } catch {}
   };

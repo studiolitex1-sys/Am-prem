@@ -1,8 +1,44 @@
 import crypto from 'crypto';
 
-// Server-side secret key (never exposed to client bundles)
-const AUTH_SECRET = process.env.AUTH_SECRET || process.env.GEMINI_API_KEY || 'valzz_secure_auth_secret_k3y_2026_x99';
-const OWNER_SECRET_KEY = process.env.OWNER_SECRET_KEY || 'valzz001';
+// Server-side secret key (rotated to instantly invalidate all previous sessions)
+const AUTH_SECRET = process.env.AUTH_SECRET || 'valzz_auth_rotated_sec_v3_2026_q78m9p!x';
+const OWNER_SECRET_KEY = (process.env.OWNER_SECRET_KEY || process.env.OWNER_PASSWORD || 'ValzzOwner#2026Secure!').trim();
+
+// In-memory brute-force protection for sensitive endpoints
+const loginAttempts = new Map<string, { count: number; blockedUntil: number }>();
+
+export function checkLoginRateLimit(identifier: string): { allowed: boolean; remainingSeconds?: number } {
+  const now = Date.now();
+  const entry = loginAttempts.get(identifier);
+  if (!entry) return { allowed: true };
+
+  if (entry.blockedUntil > now) {
+    const remainingSeconds = Math.ceil((entry.blockedUntil - now) / 1000);
+    return { allowed: false, remainingSeconds };
+  }
+
+  if (entry.blockedUntil <= now && entry.count >= 5) {
+    // Cooldown passed, reset
+    loginAttempts.delete(identifier);
+    return { allowed: true };
+  }
+
+  return { allowed: true };
+}
+
+export function recordFailedLogin(identifier: string) {
+  const now = Date.now();
+  const entry = loginAttempts.get(identifier) || { count: 0, blockedUntil: 0 };
+  entry.count += 1;
+  if (entry.count >= 5) {
+    entry.blockedUntil = now + 15 * 60 * 1000; // 15-minute lock after 5 failed attempts
+  }
+  loginAttempts.set(identifier, entry);
+}
+
+export function resetLoginAttempts(identifier: string) {
+  loginAttempts.delete(identifier);
+}
 
 export interface SessionPayload {
   username: string;
@@ -60,13 +96,21 @@ export function verifySessionToken(token: string | null | undefined): SessionPay
 }
 
 /**
- * Verify Owner password on server side
+ * Verify Owner password on server side with constant-time comparison
  */
 export function verifyOwnerPassword(password: string): boolean {
   if (!password || typeof password !== 'string') return false;
   const clean = password.trim();
-  const validSecrets = [OWNER_SECRET_KEY, 'valzz001'];
-  return validSecrets.includes(clean);
+  if (clean.length < 6) return false;
+
+  const validTarget = OWNER_SECRET_KEY;
+  if (!validTarget) return false;
+
+  // Use crypto hash and timingSafeEqual to avoid timing attacks
+  const inputHash = crypto.createHash('sha256').update(clean).digest();
+  const targetHash = crypto.createHash('sha256').update(validTarget).digest();
+
+  return crypto.timingSafeEqual(inputHash, targetHash);
 }
 
 /**

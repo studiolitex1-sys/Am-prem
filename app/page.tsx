@@ -553,7 +553,7 @@ export default function Home() {
         onClose={() => setIsOwnerModalOpen(false)}
       />
 
-      {/* Owner Control Panel Modal (Password: valzz001) */}
+      {/* Owner Control Panel Modal */}
       <OwnerPanelModal
         isOpen={isOwnerPanelOpen}
         onClose={() => setIsOwnerPanelOpen(false)}

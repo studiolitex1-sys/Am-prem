@@ -344,14 +344,14 @@ export default function OwnerPanelModal({
                   </div>
 
                   {errorMsg && (
-                    <motion.p
+                    <motion.div
                       initial={{ opacity: 0, y: -5 }}
                       animate={{ opacity: 1, y: 0 }}
                       className="text-xs text-rose-400 bg-rose-950/40 p-2.5 rounded-xl border border-rose-500/30 flex items-center justify-center gap-1.5"
                     >
                       <AlertCircle className="w-4 h-4 shrink-0" />
-                      {errorMsg}
-                    </motion.p>
+                      <span>{errorMsg}</span>
+                    </motion.div>
                   )}
 
                   <button
@@ -364,7 +364,7 @@ export default function OwnerPanelModal({
                 </form>
 
                 <div className="text-[11px] text-slate-500 pt-4 border-t border-slate-800">
-                  Akses Terproteksi Enkripsi • Khusus Developer <strong>valzzdev</strong>
+                  Akses Terproteksi Enkripsi • Khusus Administrator <strong>valzzdev</strong>
                 </div>
               </div>
             ) : (

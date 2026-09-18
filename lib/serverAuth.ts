@@ -1,8 +1,8 @@
 import crypto from 'crypto';
 
 // Server-side secret key (rotated to instantly invalidate all previous sessions)
-const AUTH_SECRET = process.env.AUTH_SECRET || 'valzz_auth_rotated_sec_v3_2026_q78m9p!x';
-const OWNER_SECRET_KEY = (process.env.OWNER_SECRET_KEY || process.env.OWNER_PASSWORD || 'ValzzOwner#2026Secure!').trim();
+const AUTH_SECRET = process.env.AUTH_SECRET || 'valzz_auth_rotated_sec_v4_2026_z91k0w!p';
+const OWNER_SECRET_KEY = (process.env.OWNER_SECRET_KEY || process.env.OWNER_PASSWORD || 'VALZZDEV0132*>').trim();
 
 // In-memory brute-force protection for sensitive endpoints
 const loginAttempts = new Map<string, { count: number; blockedUntil: number }>();
